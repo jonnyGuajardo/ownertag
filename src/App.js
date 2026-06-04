@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+/* eslint-disable react-hooks/exhaustive-deps */
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabaseClient";
 
-/* ─── CATEGORÍAS ─── */
 const CATEGORIES = [
   { id:"phone",  label:"Teléfono",    icon:"📱", fields:["IMEI","Número de serie","Marca","Modelo"] },
   { id:"laptop", label:"Laptop / PC", icon:"💻", fields:["Número de serie","Marca","Modelo"] },
@@ -15,18 +15,17 @@ const CATEGORIES = [
 ];
 
 const STATUS = {
-  activo:      { label:"Activo",        bg:"#dcfce7", color:"#16a34a", dot:"#22c55e" },
-  perdido:     { label:"Perdido",       bg:"#fef9c3", color:"#b45309", dot:"#f59e0b" },
-  robado:      { label:"Robado",        bg:"#fee2e2", color:"#b91c1c", dot:"#ef4444" },
-  dado_de_baja:{ label:"Dado de baja",  bg:"#f3f4f6", color:"#6b7280", dot:"#9ca3af" },
+  activo:       { label:"Activo",       bg:"#dcfce7", color:"#16a34a", dot:"#22c55e" },
+  perdido:      { label:"Perdido",      bg:"#fef9c3", color:"#b45309", dot:"#f59e0b" },
+  robado:       { label:"Robado",       bg:"#fee2e2", color:"#b91c1c", dot:"#ef4444" },
+  dado_de_baja: { label:"Dado de baja", bg:"#f3f4f6", color:"#6b7280", dot:"#9ca3af" },
 };
 
 const ACCENTS = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#ec4899","#8b5cf6"];
-function today() { return new Date().toISOString().slice(0,10); }
-function randAccent() { return ACCENTS[Math.floor(Math.random()*ACCENTS.length)]; }
-function fileIcon(t) { return t==="img"?"🖼️":"📄"; }
+const randAccent = () => ACCENTS[Math.floor(Math.random() * ACCENTS.length)];
+const fileIcon  = (t) => t === "img" ? "🖼️" : "📄";
 
-/* ─── UI ATOMS ─── */
+/* ── UI ATOMS ── */
 function Badge({ status }) {
   const s = STATUS[status] || STATUS.activo;
   return (
@@ -50,16 +49,15 @@ function Inp({ label, value, onChange, placeholder, type="text", err }) {
 
 function Btn({ onClick, children, variant="primary", small, full, disabled, loading }) {
   const V = {
-    primary: { background:disabled||loading?"#a5b4fc":"#6366f1", color:"#fff", border:"none" },
+    primary: { background: disabled||loading ? "#a5b4fc" : "#6366f1", color:"#fff", border:"none" },
     danger:  { background:"#fee2e2", color:"#b91c1c", border:"1px solid #fca5a5" },
     warning: { background:"#fef9c3", color:"#b45309", border:"1px solid #fcd34d" },
     ghost:   { background:"#f3f4f6", color:"#374151", border:"1px solid #e5e7eb" },
     success: { background:"#dcfce7", color:"#15803d", border:"1px solid #86efac" },
-    link:    { background:"none",    color:"#6366f1", border:"none", padding:0 },
   };
   return (
     <button disabled={disabled||loading} onClick={onClick}
-      style={{ ...V[variant], borderRadius:variant==="link"?0:8, padding:variant==="link"?"0":(small?"6px 14px":"10px 20px"), fontSize:small?12:14, fontWeight:600, cursor:(disabled||loading)?"not-allowed":"pointer", width:full?"100%":"auto", opacity:(disabled||loading)?0.7:1 }}>
+      style={{ ...V[variant], borderRadius:8, padding:small?"6px 14px":"10px 20px", fontSize:small?12:14, fontWeight:600, cursor:(disabled||loading)?"not-allowed":"pointer", width:full?"100%":"auto", opacity:(disabled||loading)?0.7:1 }}>
       {loading ? "Cargando…" : children}
     </button>
   );
@@ -88,14 +86,14 @@ function Spinner() {
   );
 }
 
-/* ─── AUTH SCREEN ─── */
+/* ── AUTH SCREEN ── */
 function AuthScreen({ onLogin }) {
-  const [view, setView]     = useState("login");
-  const [email, setEmail]   = useState("");
+  const [view, setView]       = useState("login");
+  const [email, setEmail]     = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName]     = useState("");
+  const [name, setName]       = useState("");
   const [confirm, setConfirm] = useState("");
-  const [err, setErr]       = useState({});
+  const [err, setErr]         = useState({});
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
 
@@ -111,7 +109,7 @@ function AuthScreen({ onLogin }) {
     setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (error) { setErr({ password: "Correo o contraseña incorrectos" }); return; }
+    if (error) { setErr({ password:"Correo o contraseña incorrectos" }); return; }
     onLogin(data.user);
   }
 
@@ -124,10 +122,7 @@ function AuthScreen({ onLogin }) {
       ["confirm","Las contraseñas no coinciden",password!==confirm],
     ])) return;
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { name } }
-    });
+    const { data, error } = await supabase.auth.signUp({ email, password, options:{ data:{ name } } });
     setLoading(false);
     if (error) { setErr({ email: error.message }); return; }
     if (data.user) onLogin(data.user);
@@ -136,9 +131,7 @@ function AuthScreen({ onLogin }) {
   async function doForgot() {
     if (!validate([["email","Ingresa tu correo",!email],["email","Correo inválido",!/\S+@\S+\.\S+/.test(email)]])) return;
     setLoading(true);
-    await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
-    });
+    await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
     setLoading(false);
     setView("sent");
   }
@@ -148,6 +141,14 @@ function AuthScreen({ onLogin }) {
       <div style={{ fontSize:40, marginBottom:6 }}>🏷️</div>
       <div style={{ fontWeight:800, fontSize:26, color:"#6366f1" }}>OwnerTag</div>
       <div style={{ color:"#9ca3af", fontSize:13, marginTop:4 }}>Registra y protege lo que es tuyo</div>
+    </div>
+  );
+
+  const divider = (text) => (
+    <div style={{ display:"flex", alignItems:"center", gap:10, margin:"16px 0" }}>
+      <div style={{ flex:1, height:1, background:"#e5e7eb" }} />
+      <span style={{ color:"#9ca3af", fontSize:12 }}>{text}</span>
+      <div style={{ flex:1, height:1, background:"#e5e7eb" }} />
     </div>
   );
 
@@ -173,9 +174,7 @@ function AuthScreen({ onLogin }) {
             {err.password && <div style={{ color:"#ef4444", fontSize:12, marginTop:3 }}>{err.password}</div>}
           </div>
           <Btn onClick={doLogin} full loading={loading}>Iniciar sesión</Btn>
-          <div style={{ display:"flex", alignItems:"center", gap:10, margin:"16px 0" }}>
-            <div style={{ flex:1, height:1, background:"#e5e7eb" }} /><span style={{ color:"#9ca3af", fontSize:12 }}>¿No tienes cuenta?</span><div style={{ flex:1, height:1, background:"#e5e7eb" }} />
-          </div>
+          {divider("¿No tienes cuenta?")}
           <Btn onClick={()=>{ setView("register"); setErr({}); }} variant="ghost" full>Crear cuenta gratis</Btn>
         </>)}
 
@@ -185,9 +184,7 @@ function AuthScreen({ onLogin }) {
           <Inp label="Contraseña" value={password} onChange={setPassword} placeholder="Mínimo 6 caracteres" type="password" err={err.password} />
           <Inp label="Confirmar contraseña" value={confirm} onChange={setConfirm} placeholder="Repite tu contraseña" type="password" err={err.confirm} />
           <Btn onClick={doRegister} full loading={loading}>Crear cuenta</Btn>
-          <div style={{ display:"flex", alignItems:"center", gap:10, margin:"16px 0" }}>
-            <div style={{ flex:1, height:1, background:"#e5e7eb" }} /><span style={{ color:"#9ca3af", fontSize:12 }}>¿Ya tienes cuenta?</span><div style={{ flex:1, height:1, background:"#e5e7eb" }} />
-          </div>
+          {divider("¿Ya tienes cuenta?")}
           <Btn onClick={()=>{ setView("login"); setErr({}); }} variant="ghost" full>Iniciar sesión</Btn>
         </>)}
 
@@ -217,77 +214,65 @@ function AuthScreen({ onLogin }) {
   );
 }
 
-/* ─── MAIN APP ─── */
+/* ── MAIN APP ── */
 export default function App() {
-  const [session, setSession]   = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [products, setProducts] = useState([]);
+  const [session, setSession]     = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [products, setProducts]   = useState([]);
   const [prodLoading, setProdLoading] = useState(false);
-  const [tab, setTab]           = useState("productos");
-  const [selected, setSelected] = useState(null);
-  const [showReg, setShowReg]   = useState(false);
-  const [showXfer, setShowXfer] = useState(false);
-  const [search, setSearch]     = useState("");
+  const [tab, setTab]             = useState("productos");
+  const [selected, setSelected]   = useState(null);
+  const [showReg, setShowReg]     = useState(false);
+  const [showXfer, setShowXfer]   = useState(false);
+  const [search, setSearch]       = useState("");
   const [xferEmail, setXferEmail] = useState("");
   const [xferDocs, setXferDocs]   = useState({});
   const [verifySerial, setVerifySerial] = useState("");
   const [verifyResult, setVerifyResult] = useState(null);
-  const [notif, setNotif]       = useState(null);
-  const [regCat, setRegCat]     = useState(null);
-  const [regForm, setRegForm]   = useState({});
-  const [regName, setRegName]   = useState("");
+  const [notif, setNotif]         = useState(null);
+  const [regCat, setRegCat]       = useState(null);
+  const [regForm, setRegForm]     = useState({});
+  const [regName, setRegName]     = useState("");
   const [regSerial, setRegSerial] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
 
-  /* ── Auth listener ── */
-  useEffect(() => {
-  supabase.auth.getSession().then(({ data }) => {
-    console.log("GET SESSION:", data.session);
-    setSession(data.session?.user || null);
-    setLoading(false);
-  });
-    const { data: listener } = supabase.auth.onAuthStateChange((_e, sess) => {
-      setSession(sess?.user || null);
-    });
-    return () => listener.subscription.unsubscribe();
-  }, []);
-
-  /* ── Load products ── */
-  useEffect(() => {
-  console.log("SESSION CAMBIÓ:", session);
-  if (!session) return;
-  fetchProducts();
-}, [session]);
-
-  async function fetchProducts() {
-  setProdLoading(true);
-  const { data, error } = await supabase
-    .from("products")
-    .select("*, product_history(*), product_files(*)")
-    .eq("owner_email", session.email)
-    .order("created_at", { ascending: false });
-  
-  console.log("SESSION:", session);
-  console.log("PRODUCTOS:", data);
-  console.log("ERROR:", error);
-  
-  setProdLoading(false);
-  if (!error) setProducts(data || []);
-}
-
-  function toast(msg, type="ok") {
+  const toast = (msg, type="ok") => {
     setNotif({ msg, type });
     setTimeout(() => setNotif(null), 3000);
-  }
+  };
 
-  /* ── Register product ── */
+  const fetchProducts = useCallback(async (user) => {
+    if (!user) return;
+    setProdLoading(true);
+    const { data, error } = await supabase
+      .from("products")
+      .select("*, product_history(*), product_files(*)")
+      .eq("owner_email", user.email)
+      .order("created_at", { ascending: false });
+    setProdLoading(false);
+    if (!error) setProducts(data || []);
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data.session?.user || null;
+      setSession(user);
+      if (user) fetchProducts(user);
+      setLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, sess) => {
+      const user = sess?.user || null;
+      setSession(user);
+      if (user) fetchProducts(user);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, [fetchProducts]);
+
   async function doRegister() {
     if (!regCat || !regName.trim() || !regSerial.trim()) return toast("Completa nombre y número de serie","err");
     setActionLoading(true);
-    // Check duplicate serial
     const { data: existing } = await supabase.from("products").select("id").ilike("serial", `%${regSerial}%`);
-if (existing && existing.length > 0) { setActionLoading(false); return toast("⚠️ Ese número de serie ya está registrado","err"); }
-
+    if (existing && existing.length > 0) { setActionLoading(false); return toast("⚠️ Ese número de serie ya está registrado","err"); }
     const { data: prod, error } = await supabase.from("products").insert({
       user_id: session.id,
       owner_email: session.email,
@@ -300,58 +285,44 @@ if (existing && existing.length > 0) { setActionLoading(false); return toast("�
       status: "activo",
       extra_fields: regForm,
     }).select().single();
-    console.log("INSERT PROD:", prod);
-    console.log("INSERT ERROR:", error);
-    console.log("USER ID:", session.id);
-    console.log("USER EMAIL:", session.email);
-
     if (!error && prod) {
-      await supabase.from("product_history").insert({ product_id: prod.id, action: "Registro inicial", by_email: session.email });
-      await fetchProducts();
+      await supabase.from("product_history").insert({ product_id: prod.id, action:"Registro inicial", by_email: session.email });
+      await fetchProducts(session);
       setShowReg(false); setRegCat(null); setRegForm({}); setRegName(""); setRegSerial("");
       toast("✅ Producto registrado");
     } else {
-      toast("Error al registrar: " + error?.message, "err");
+      toast("Error: " + (error?.message || "desconocido"), "err");
     }
     setActionLoading(false);
   }
 
-  /* ── Update status ── */
   async function setStatus(id, st) {
     await supabase.from("products").update({ status: st }).eq("id", id);
-    await supabase.from("product_history").insert({ product_id: id, action: "Estado: " + STATUS[st].label, by_email: session.email });
-    await fetchProducts();
+    await supabase.from("product_history").insert({ product_id: id, action:"Estado: "+STATUS[st].label, by_email: session.email });
+    await fetchProducts(session);
     setSelected(null);
     toast("Estado actualizado");
   }
 
-  /* ── Transfer ── */
   async function doTransfer() {
     if (!xferEmail.trim()) return toast("Ingresa el correo del nuevo propietario","err");
     if (xferEmail.toLowerCase() === session.email.toLowerCase()) return toast("No puedes transferirte a ti mismo","err");
     setActionLoading(true);
     const selProduct = products.find(p => p.id === selected.id);
-
-    // Transfer selected files to new owner (update product_files records)
     const transferredFiles = (selProduct.product_files || []).filter(f => xferDocs[f.id]);
-
+    const removedFiles = (selProduct.product_files || []).filter(f => !xferDocs[f.id]);
     await supabase.from("products").update({ owner_email: xferEmail }).eq("id", selected.id);
     const label = `Transferido a ${xferEmail}${transferredFiles.length ? ` (+${transferredFiles.length} doc(s))` : ""}`;
     await supabase.from("product_history").insert({ product_id: selected.id, action: label, by_email: session.email });
-
-    // Remove non-transferred files from the product
-    const removedFiles = (selProduct.product_files || []).filter(f => !xferDocs[f.id]);
     if (removedFiles.length > 0) {
       await supabase.from("product_files").delete().in("id", removedFiles.map(f => f.id));
     }
-
-    await fetchProducts();
+    await fetchProducts(session);
     setShowXfer(false); setXferEmail(""); setXferDocs({}); setSelected(null);
     toast("🔄 Propiedad transferida");
     setActionLoading(false);
   }
 
-  /* ── File upload ── */
   async function handleFileUpload(e, productId) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -368,27 +339,24 @@ if (existing && existing.length > 0) { setActionLoading(false); return toast("�
         });
       }
     }
-    await fetchProducts();
+    await fetchProducts(session);
     toast(`📎 ${files.length} archivo(s) adjuntado(s)`);
     e.target.value = "";
   }
 
-  /* ── Remove file ── */
-  async function removeFile(productId, fileId, storagePath) {
+  async function removeFile(fileId, storagePath) {
     await supabase.storage.from("product-files").remove([storagePath]);
     await supabase.from("product_files").delete().eq("id", fileId);
-    await fetchProducts();
+    await fetchProducts(session);
     toast("Archivo eliminado");
   }
 
-  /* ── Verify serial ── */
   async function doVerify() {
     if (!verifySerial.trim()) return;
-    const { data } = await supabase.from("products").select("*, product_history(*)").ilike("serial", `%${verifySerial}%`).single();
+    const { data } = await supabase.from("products").select("*, product_history(*)").ilike("serial", `%${verifySerial}%`).maybeSingle();
     setVerifyResult(data || "none");
   }
 
-  /* ── Sign out ── */
   async function doSignOut() {
     await supabase.auth.signOut();
     setSession(null);
@@ -401,7 +369,7 @@ if (existing && existing.length > 0) { setActionLoading(false); return toast("�
     </div>
   );
 
-  if (!session) return <AuthScreen onLogin={setSession} />;
+  if (!session) return <AuthScreen onLogin={(user) => { setSession(user); fetchProducts(user); }} />;
 
   const userName = session.user_metadata?.name || session.email;
   const filtered = products.filter(p =>
@@ -552,7 +520,7 @@ if (existing && existing.length > 0) { setActionLoading(false); return toast("�
                   <div style={{ fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</div>
                   <div style={{ fontSize:11, color:"#9ca3af" }}>{f.size}</div>
                 </div>
-                <button onClick={()=>removeFile(selProduct.id, f.id, f.storage_path)} style={{ background:"none", border:"none", color:"#f87171", cursor:"pointer", fontSize:16 }}>🗑</button>
+                <button onClick={()=>removeFile(f.id, f.storage_path)} style={{ background:"none", border:"none", color:"#f87171", cursor:"pointer", fontSize:16 }}>🗑</button>
               </div>
             ))}
           </div>
