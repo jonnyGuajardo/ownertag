@@ -274,6 +274,7 @@ export default function App() {
     const { data: existing } = await supabase.from("products").select("id").ilike("serial", `%${regSerial}%`);
     if (existing && existing.length > 0) { setActionLoading(false); return toast("⚠️ Ese número de serie ya está registrado","err"); }
     const { data: prod, error } = await supabase.from("products").insert({
+      public_owner_id: 'OT-' + session.id.substring(0, 8).toUpperCase(),
       user_id: session.id,
       owner_email: session.email,
       name: regName,
@@ -465,7 +466,7 @@ export default function App() {
                 <div style={{ color:"#6b7280", fontSize:13, marginBottom:8 }}>{verifyResult.serial}</div>
                 <Badge status={verifyResult.status} />
                 <div style={{ marginTop:12, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                  {[["Propietario",verifyResult.owner_email],["Categoría",CATEGORIES.find(c=>c.id===verifyResult.category)?.label||"-"]].map(([k,v])=>(
+                  {[["Propietario ID", verifyResult.public_owner_id || 'OT-' + verifyResult.owner_email.substring(0,8).toUpperCase()],["Categoría",CATEGORIES.find(c=>c.id===verifyResult.category)?.label||"-"]].map(([k,v])=>(
                     <div key={k} style={{ background:"#f8fafc", borderRadius:8, padding:10 }}>
                       <div style={{ color:"#9ca3af", fontSize:11, marginBottom:2 }}>{k}</div>
                       <div style={{ fontWeight:600, fontSize:13, wordBreak:"break-all" }}>{v}</div>
