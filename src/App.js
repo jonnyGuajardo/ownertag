@@ -233,7 +233,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [showReg, setShowReg]   = useState(false);
   const [showXfer, setShowXfer] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
+  //const [showFiles, setShowFiles] = useState(false);
   const [search, setSearch]     = useState("");
   const [xferEmail, setXferEmail] = useState("");
   const [xferDocs, setXferDocs]   = useState({});
@@ -244,7 +244,7 @@ export default function App() {
   const [regForm, setRegForm]   = useState({});
   const [regName, setRegName]   = useState("");
   const [regSerial, setRegSerial] = useState("");
-  const fileRef = useRef(null);
+  //const fileRef = useRef(null);
 
   if (!session) return <AuthScreen users={users} setUsers={setUsers} onLogin={setSession} />;
 
@@ -300,7 +300,7 @@ export default function App() {
       type: f.type.startsWith("image/")?"img":"pdf",
     }));
     setProducts(p=>p.map(x=>x.id===productId?{ ...x, files:[...x.files,...newFiles] }:x));
-    const updated = products.find(x=>x.id===productId);
+    //const updated = products.find(x=>x.id===productId);
     if (selected && selected.id===productId) setSelected(s=>({ ...s, files:[...(s.files||[]),...newFiles] }));
     toast(`📎 ${newFiles.length} archivo(s) adjuntado(s)`);
     e.target.value="";
