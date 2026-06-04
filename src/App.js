@@ -285,8 +285,8 @@ export default function App() {
     if (!regCat || !regName.trim() || !regSerial.trim()) return toast("Completa nombre y número de serie","err");
     setActionLoading(true);
     // Check duplicate serial
-    const { data: existing } = await supabase.from("products").select("id").ilike("serial", `%${regSerial}%`).single();
-    if (existing) { setActionLoading(false); return toast("⚠️ Ese número de serie ya está registrado","err"); }
+    const { data: existing } = await supabase.from("products").select("id").ilike("serial", `%${regSerial}%`);
+if (existing && existing.length > 0) { setActionLoading(false); return toast("⚠️ Ese número de serie ya está registrado","err"); }
 
     const { data: prod, error } = await supabase.from("products").insert({
       user_id: session.id,
@@ -300,6 +300,10 @@ export default function App() {
       status: "activo",
       extra_fields: regForm,
     }).select().single();
+    console.log("INSERT PROD:", prod);
+    console.log("INSERT ERROR:", error);
+    console.log("USER ID:", session.id);
+    console.log("USER EMAIL:", session.email);
 
     if (!error && prod) {
       await supabase.from("product_history").insert({ product_id: prod.id, action: "Registro inicial", by_email: session.email });
