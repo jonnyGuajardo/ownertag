@@ -23,7 +23,7 @@ const STATUS = {
 
 const ACCENTS    = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#ec4899","#8b5cf6"];
 const randAccent = () => ACCENTS[Math.floor(Math.random() * ACCENTS.length)];
-const fileIcon   = (t) => t === "img" ? "🖼️" : "📄";
+
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
