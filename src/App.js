@@ -241,10 +241,11 @@ export default function App() {
 
   /* ── Auth listener ── */
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session?.user || null);
-      setLoading(false);
-    });
+  supabase.auth.getSession().then(({ data }) => {
+    console.log("GET SESSION:", data.session);
+    setSession(data.session?.user || null);
+    setLoading(false);
+  });
     const { data: listener } = supabase.auth.onAuthStateChange((_e, sess) => {
       setSession(sess?.user || null);
     });
@@ -253,20 +254,26 @@ export default function App() {
 
   /* ── Load products ── */
   useEffect(() => {
-    if (!session) return;
-    fetchProducts();
-  }, [session]);
+  console.log("SESSION CAMBIÓ:", session);
+  if (!session) return;
+  fetchProducts();
+}, [session]);
 
   async function fetchProducts() {
-    setProdLoading(true);
-    const { data, error } = await supabase
-      .from("products")
-      .select("*, product_history(*), product_files(*)")
-      .eq("owner_email", session.email)
-      .order("created_at", { ascending: false });
-    setProdLoading(false);
-    if (!error) setProducts(data || []);
-  }
+  setProdLoading(true);
+  const { data, error } = await supabase
+    .from("products")
+    .select("*, product_history(*), product_files(*)")
+    .eq("owner_email", session.email)
+    .order("created_at", { ascending: false });
+  
+  console.log("SESSION:", session);
+  console.log("PRODUCTOS:", data);
+  console.log("ERROR:", error);
+  
+  setProdLoading(false);
+  if (!error) setProducts(data || []);
+}
 
   function toast(msg, type="ok") {
     setNotif({ msg, type });
