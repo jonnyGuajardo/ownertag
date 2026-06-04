@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
 
-/* ─── DATA ─── */
+/* ─── CATEGORÍAS ─── */
 const CATEGORIES = [
   { id:"phone",  label:"Teléfono",    icon:"📱", fields:["IMEI","Número de serie","Marca","Modelo"] },
   { id:"laptop", label:"Laptop / PC", icon:"💻", fields:["Número de serie","Marca","Modelo"] },
@@ -20,26 +21,14 @@ const STATUS = {
   dado_de_baja:{ label:"Dado de baja",  bg:"#f3f4f6", color:"#6b7280", dot:"#9ca3af" },
 };
 
-const DEMO_USERS = [
-  { id:"u1", name:"Carlos Ramírez", email:"carlos@demo.com", password:"demo1234" },
-];
-
-const DEMO_PRODUCTS = [
-  { id:"p1", userId:"u1", category:"phone",  name:"iPhone 15 Pro",     serial:"IMEI: 352398107612345", brand:"Apple",  model:"iPhone 15 Pro", accent:"#6366f1", status:"activo", ownerEmail:"carlos@demo.com", date:"2024-01-15", history:[{action:"Registro inicial",date:"2024-01-15",by:"carlos@demo.com"}], files:[ {id:"f1",name:"Factura_iPhone.pdf",size:"245 KB",type:"pdf"} ] },
-  { id:"p2", userId:"u1", category:"car",    name:"Nissan Versa 2022",  serial:"VIN: 3N1CN7AP4NL123456", brand:"Nissan",model:"Versa",          accent:"#0ea5e9", status:"activo", ownerEmail:"carlos@demo.com", date:"2023-06-10", history:[{action:"Registro inicial",date:"2023-06-10",by:"carlos@demo.com"}], files:[ {id:"f2",name:"Factura_Nissan.pdf",size:"512 KB",type:"pdf"}, {id:"f3",name:"Tarjeta_Circulacion.jpg",size:"180 KB",type:"img"} ] },
-  { id:"p3", userId:"u1", category:"house",  name:"Casa Cumbres",       serial:"Folio: NL-2021-004832",  brand:"",      model:"",               accent:"#10b981", status:"activo", ownerEmail:"carlos@demo.com", date:"2021-03-22", history:[{action:"Registro inicial",date:"2021-03-22",by:"carlos@demo.com"}], files:[ {id:"f4",name:"Escritura_2021.pdf",size:"1.2 MB",type:"pdf"} ] },
-];
-
 const ACCENTS = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#ec4899","#8b5cf6"];
-
-/* ─── HELPERS ─── */
 function today() { return new Date().toISOString().slice(0,10); }
-function uid()   { return "x"+Date.now()+Math.random().toString(36).slice(2,6); }
-function fileIcon(type) { return type==="pdf"?"📄":type==="img"?"🖼️":"📎"; }
+function randAccent() { return ACCENTS[Math.floor(Math.random()*ACCENTS.length)]; }
+function fileIcon(t) { return t==="img"?"🖼️":"📄"; }
 
 /* ─── UI ATOMS ─── */
 function Badge({ status }) {
-  const s = STATUS[status];
+  const s = STATUS[status] || STATUS.activo;
   return (
     <span style={{ background:s.bg, color:s.color, borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:600, display:"inline-flex", alignItems:"center", gap:5 }}>
       <span style={{ width:6, height:6, borderRadius:"50%", background:s.dot, display:"inline-block" }} />
@@ -59,19 +48,19 @@ function Inp({ label, value, onChange, placeholder, type="text", err }) {
   );
 }
 
-function Btn({ onClick, children, variant="primary", small, full, disabled }) {
+function Btn({ onClick, children, variant="primary", small, full, disabled, loading }) {
   const V = {
-    primary: { background:disabled?"#a5b4fc":"#6366f1", color:"#fff", border:"none" },
+    primary: { background:disabled||loading?"#a5b4fc":"#6366f1", color:"#fff", border:"none" },
     danger:  { background:"#fee2e2", color:"#b91c1c", border:"1px solid #fca5a5" },
     warning: { background:"#fef9c3", color:"#b45309", border:"1px solid #fcd34d" },
     ghost:   { background:"#f3f4f6", color:"#374151", border:"1px solid #e5e7eb" },
     success: { background:"#dcfce7", color:"#15803d", border:"1px solid #86efac" },
-    link:    { background:"none", color:"#6366f1", border:"none", padding:0 },
+    link:    { background:"none",    color:"#6366f1", border:"none", padding:0 },
   };
   return (
-    <button disabled={disabled} onClick={onClick}
-      style={{ ...V[variant], borderRadius:variant==="link"?0:8, padding:variant==="link"?"0":(small?"6px 14px":"10px 20px"), fontSize:small?12:14, fontWeight:600, cursor:disabled?"not-allowed":"pointer", width:full?"100%":"auto", opacity:disabled?0.7:1 }}>
-      {children}
+    <button disabled={disabled||loading} onClick={onClick}
+      style={{ ...V[variant], borderRadius:variant==="link"?0:8, padding:variant==="link"?"0":(small?"6px 14px":"10px 20px"), fontSize:small?12:14, fontWeight:600, cursor:(disabled||loading)?"not-allowed":"pointer", width:full?"100%":"auto", opacity:(disabled||loading)?0.7:1 }}>
+      {loading ? "Cargando…" : children}
     </button>
   );
 }
@@ -90,41 +79,43 @@ function Modal({ title, onClose, children, wide }) {
   );
 }
 
-function Divider({ text }) {
+function Spinner() {
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:10, margin:"16px 0" }}>
-      <div style={{ flex:1, height:1, background:"#e5e7eb" }} />
-      <span style={{ color:"#9ca3af", fontSize:12 }}>{text}</span>
-      <div style={{ flex:1, height:1, background:"#e5e7eb" }} />
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", padding:"60px 0" }}>
+      <div style={{ width:32, height:32, border:"3px solid #e5e7eb", borderTop:"3px solid #6366f1", borderRadius:"50%", animation:"spin 0.8s linear infinite" }} />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
 
-/* ─── AUTH SCREENS ─── */
-function AuthScreen({ users, setUsers, onLogin }) {
-  const [view, setView]       = useState("login"); // login | register | forgot | sent
-  const [email, setEmail]     = useState("");
+/* ─── AUTH SCREEN ─── */
+function AuthScreen({ onLogin }) {
+  const [view, setView]     = useState("login");
+  const [email, setEmail]   = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName]       = useState("");
+  const [name, setName]     = useState("");
   const [confirm, setConfirm] = useState("");
-  const [err, setErr]         = useState({});
+  const [err, setErr]       = useState({});
+  const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
 
   function validate(rules) {
     const e = {};
-    rules.forEach(([field, msg, cond]) => { if (cond) e[field] = msg; });
+    rules.forEach(([f,m,c]) => { if(c) e[f]=m; });
     setErr(e);
     return Object.keys(e).length === 0;
   }
 
-  function doLogin() {
+  async function doLogin() {
     if (!validate([["email","Ingresa tu correo",!email],["password","Ingresa tu contraseña",!password]])) return;
-    const u = users.find(u => u.email.toLowerCase()===email.toLowerCase() && u.password===password);
-    if (!u) { setErr({ password:"Correo o contraseña incorrectos" }); return; }
-    onLogin(u);
+    setLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (error) { setErr({ password: "Correo o contraseña incorrectos" }); return; }
+    onLogin(data.user);
   }
 
-  function doRegister() {
+  async function doRegister() {
     if (!validate([
       ["name","Ingresa tu nombre",!name.trim()],
       ["email","Ingresa tu correo",!email],
@@ -132,43 +123,48 @@ function AuthScreen({ users, setUsers, onLogin }) {
       ["password","Mínimo 6 caracteres",password.length<6],
       ["confirm","Las contraseñas no coinciden",password!==confirm],
     ])) return;
-    if (users.find(u=>u.email.toLowerCase()===email.toLowerCase())) {
-      setErr({ email:"Este correo ya está registrado" }); return;
-    }
-    const nu = { id:uid(), name, email:email.toLowerCase(), password };
-    setUsers(u=>[...u,nu]);
-    onLogin(nu);
+    setLoading(true);
+    const { data, error } = await supabase.auth.signUp({
+      email, password,
+      options: { data: { name } }
+    });
+    setLoading(false);
+    if (error) { setErr({ email: error.message }); return; }
+    if (data.user) onLogin(data.user);
   }
 
-  function doForgot() {
+  async function doForgot() {
     if (!validate([["email","Ingresa tu correo",!email],["email","Correo inválido",!/\S+@\S+\.\S+/.test(email)]])) return;
+    setLoading(true);
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    setLoading(false);
     setView("sent");
   }
 
   const logo = (
     <div style={{ textAlign:"center", marginBottom:28 }}>
       <div style={{ fontSize:40, marginBottom:6 }}>🏷️</div>
-      <div style={{ fontWeight:800, fontSize:26, color:"#6366f1", letterSpacing:-0.5 }}>OwnerTag</div>
+      <div style={{ fontWeight:800, fontSize:26, color:"#6366f1" }}>OwnerTag</div>
       <div style={{ color:"#9ca3af", fontSize:13, marginTop:4 }}>Registra y protege lo que es tuyo</div>
     </div>
   );
 
   return (
-    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#f0f0ff 0%,#f8fafc 100%)", display:"flex", alignItems:"center", justifyContent:"center", padding:16, fontFamily:"system-ui,sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#f0f0ff,#f8fafc)", display:"flex", alignItems:"center", justifyContent:"center", padding:16, fontFamily:"system-ui,sans-serif" }}>
       <div style={{ background:"#fff", borderRadius:20, padding:32, width:"100%", maxWidth:400, boxShadow:"0 8px 40px #6366f115" }}>
         {logo}
 
-        {/* LOGIN */}
         {view==="login" && (<>
           <Inp label="Correo electrónico" value={email} onChange={setEmail} placeholder="tu@correo.com" type="email" err={err.email} />
           <div style={{ marginBottom:14 }}>
             <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
               <label style={{ color:"#374151", fontSize:13, fontWeight:500 }}>Contraseña</label>
-              <Btn variant="link" onClick={()=>{ setView("forgot"); setErr({}); }} small>¿Olvidaste tu contraseña?</Btn>
+              <button onClick={()=>{ setView("forgot"); setErr({}); }} style={{ background:"none", border:"none", color:"#6366f1", fontSize:12, fontWeight:600, cursor:"pointer" }}>¿Olvidaste tu contraseña?</button>
             </div>
             <div style={{ position:"relative" }}>
-              <input type={showPass?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)}
-                placeholder="••••••••"
+              <input type={showPass?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"
                 style={{ width:"100%", border:"1px solid "+(err.password?"#f87171":"#e5e7eb"), borderRadius:8, padding:"10px 40px 10px 12px", fontSize:14, outline:"none", boxSizing:"border-box", color:"#111", background:"#fafafa" }} />
               <button onClick={()=>setShowPass(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", fontSize:16 }}>
                 {showPass?"🙈":"👁️"}
@@ -176,27 +172,25 @@ function AuthScreen({ users, setUsers, onLogin }) {
             </div>
             {err.password && <div style={{ color:"#ef4444", fontSize:12, marginTop:3 }}>{err.password}</div>}
           </div>
-          <Btn onClick={doLogin} full>Iniciar sesión</Btn>
-          <Divider text="¿No tienes cuenta?" />
-          <Btn onClick={()=>{ setView("register"); setErr({}); }} variant="ghost" full>Crear cuenta gratis</Btn>
-          <div style={{ marginTop:16, background:"#f0f0ff", borderRadius:10, padding:12 }}>
-            <div style={{ fontSize:12, color:"#6366f1", fontWeight:600, marginBottom:2 }}>Demo rápida</div>
-            <div style={{ fontSize:12, color:"#4338ca" }}>📧 carlos@demo.com &nbsp;🔑 demo1234</div>
+          <Btn onClick={doLogin} full loading={loading}>Iniciar sesión</Btn>
+          <div style={{ display:"flex", alignItems:"center", gap:10, margin:"16px 0" }}>
+            <div style={{ flex:1, height:1, background:"#e5e7eb" }} /><span style={{ color:"#9ca3af", fontSize:12 }}>¿No tienes cuenta?</span><div style={{ flex:1, height:1, background:"#e5e7eb" }} />
           </div>
+          <Btn onClick={()=>{ setView("register"); setErr({}); }} variant="ghost" full>Crear cuenta gratis</Btn>
         </>)}
 
-        {/* REGISTER */}
         {view==="register" && (<>
           <Inp label="Nombre completo" value={name} onChange={setName} placeholder="Tu nombre" err={err.name} />
           <Inp label="Correo electrónico" value={email} onChange={setEmail} placeholder="tu@correo.com" type="email" err={err.email} />
           <Inp label="Contraseña" value={password} onChange={setPassword} placeholder="Mínimo 6 caracteres" type="password" err={err.password} />
           <Inp label="Confirmar contraseña" value={confirm} onChange={setConfirm} placeholder="Repite tu contraseña" type="password" err={err.confirm} />
-          <Btn onClick={doRegister} full>Crear cuenta</Btn>
-          <Divider text="¿Ya tienes cuenta?" />
+          <Btn onClick={doRegister} full loading={loading}>Crear cuenta</Btn>
+          <div style={{ display:"flex", alignItems:"center", gap:10, margin:"16px 0" }}>
+            <div style={{ flex:1, height:1, background:"#e5e7eb" }} /><span style={{ color:"#9ca3af", fontSize:12 }}>¿Ya tienes cuenta?</span><div style={{ flex:1, height:1, background:"#e5e7eb" }} />
+          </div>
           <Btn onClick={()=>{ setView("login"); setErr({}); }} variant="ghost" full>Iniciar sesión</Btn>
         </>)}
 
-        {/* FORGOT */}
         {view==="forgot" && (<>
           <div style={{ textAlign:"center", marginBottom:20 }}>
             <div style={{ fontSize:36 }}>🔑</div>
@@ -204,18 +198,17 @@ function AuthScreen({ users, setUsers, onLogin }) {
             <div style={{ color:"#9ca3af", fontSize:13, marginTop:4 }}>Te enviaremos un enlace a tu correo</div>
           </div>
           <Inp label="Correo electrónico" value={email} onChange={setEmail} placeholder="tu@correo.com" type="email" err={err.email} />
-          <Btn onClick={doForgot} full>Enviar enlace de recuperación</Btn>
+          <Btn onClick={doForgot} full loading={loading}>Enviar enlace de recuperación</Btn>
           <div style={{ textAlign:"center", marginTop:14 }}>
-            <Btn variant="link" onClick={()=>{ setView("login"); setErr({}); }} small>← Volver al inicio de sesión</Btn>
+            <button onClick={()=>{ setView("login"); setErr({}); }} style={{ background:"none", border:"none", color:"#6366f1", fontSize:13, fontWeight:600, cursor:"pointer" }}>← Volver al inicio de sesión</button>
           </div>
         </>)}
 
-        {/* SENT */}
         {view==="sent" && (
           <div style={{ textAlign:"center", padding:"10px 0" }}>
             <div style={{ fontSize:48, marginBottom:12 }}>📬</div>
             <div style={{ fontWeight:700, fontSize:18, marginBottom:8 }}>Revisa tu correo</div>
-            <div style={{ color:"#6b7280", fontSize:14, marginBottom:20 }}>Enviamos un enlace de recuperación a <strong style={{ color:"#111" }}>{email}</strong>. Revisa también tu carpeta de spam.</div>
+            <div style={{ color:"#6b7280", fontSize:14, marginBottom:20 }}>Enviamos un enlace a <strong style={{ color:"#111" }}>{email}</strong>. Revisa también spam.</div>
             <Btn onClick={()=>{ setView("login"); setEmail(""); setErr({}); }} variant="ghost" full>← Volver al inicio de sesión</Btn>
           </div>
         )}
@@ -226,14 +219,14 @@ function AuthScreen({ users, setUsers, onLogin }) {
 
 /* ─── MAIN APP ─── */
 export default function App() {
-  const [users, setUsers]       = useState(DEMO_USERS);
   const [session, setSession]   = useState(null);
-  const [products, setProducts] = useState(DEMO_PRODUCTS);
+  const [loading, setLoading]   = useState(true);
+  const [products, setProducts] = useState([]);
+  const [prodLoading, setProdLoading] = useState(false);
   const [tab, setTab]           = useState("productos");
   const [selected, setSelected] = useState(null);
   const [showReg, setShowReg]   = useState(false);
   const [showXfer, setShowXfer] = useState(false);
-  //const [showFiles, setShowFiles] = useState(false);
   const [search, setSearch]     = useState("");
   const [xferEmail, setXferEmail] = useState("");
   const [xferDocs, setXferDocs]   = useState({});
@@ -244,87 +237,170 @@ export default function App() {
   const [regForm, setRegForm]   = useState({});
   const [regName, setRegName]   = useState("");
   const [regSerial, setRegSerial] = useState("");
-  //const fileRef = useRef(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  if (!session) return <AuthScreen users={users} setUsers={setUsers} onLogin={setSession} />;
+  /* ── Auth listener ── */
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session?.user || null);
+      setLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, sess) => {
+      setSession(sess?.user || null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
-  const myProducts = products.filter(p => p.ownerEmail===session.email);
-  const filtered   = myProducts.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.serial.toLowerCase().includes(search.toLowerCase())
-  );
+  /* ── Load products ── */
+  useEffect(() => {
+    if (!session) return;
+    fetchProducts();
+  }, [session]);
+
+  async function fetchProducts() {
+    setProdLoading(true);
+    const { data, error } = await supabase
+      .from("products")
+      .select("*, product_history(*), product_files(*)")
+      .eq("owner_email", session.email)
+      .order("created_at", { ascending: false });
+    setProdLoading(false);
+    if (!error) setProducts(data || []);
+  }
 
   function toast(msg, type="ok") {
     setNotif({ msg, type });
-    setTimeout(()=>setNotif(null), 3000);
+    setTimeout(() => setNotif(null), 3000);
   }
 
-  /* product mutations */
-  function setStatus(id, st) {
-    setProducts(p=>p.map(x=>x.id===id?{ ...x, status:st, history:[...x.history,{action:"Estado: "+STATUS[st].label,date:today(),by:session.email}] }:x));
-    setSelected(null); toast("Estado actualizado");
+  /* ── Register product ── */
+  async function doRegister() {
+    if (!regCat || !regName.trim() || !regSerial.trim()) return toast("Completa nombre y número de serie","err");
+    setActionLoading(true);
+    // Check duplicate serial
+    const { data: existing } = await supabase.from("products").select("id").ilike("serial", `%${regSerial}%`).single();
+    if (existing) { setActionLoading(false); return toast("⚠️ Ese número de serie ya está registrado","err"); }
+
+    const { data: prod, error } = await supabase.from("products").insert({
+      user_id: session.id,
+      owner_email: session.email,
+      name: regName,
+      category: regCat,
+      serial: regSerial,
+      brand: regForm["Marca"] || "",
+      model: regForm["Modelo"] || "",
+      accent: randAccent(),
+      status: "activo",
+      extra_fields: regForm,
+    }).select().single();
+
+    if (!error && prod) {
+      await supabase.from("product_history").insert({ product_id: prod.id, action: "Registro inicial", by_email: session.email });
+      await fetchProducts();
+      setShowReg(false); setRegCat(null); setRegForm({}); setRegName(""); setRegSerial("");
+      toast("✅ Producto registrado");
+    } else {
+      toast("Error al registrar: " + error?.message, "err");
+    }
+    setActionLoading(false);
   }
 
-  function doRegister() {
-    if (!regCat||!regName.trim()||!regSerial.trim()) return toast("Completa nombre y número de serie","err");
-    if (products.find(p=>p.serial.toLowerCase().includes(regSerial.toLowerCase()))) return toast("⚠️ Ese número de serie ya está registrado","err");
-    const np = { id:uid(), userId:session.id, category:regCat, name:regName, serial:regSerial, brand:regForm["Marca"]||"", model:regForm["Modelo"]||"", accent:ACCENTS[Math.floor(Math.random()*ACCENTS.length)], status:"activo", ownerEmail:session.email, date:today(), history:[{action:"Registro inicial",date:today(),by:session.email}], files:[] };
-    setProducts(p=>[np,...p]);
-    setShowReg(false); setRegCat(null); setRegForm({}); setRegName(""); setRegSerial("");
-    toast("✅ Producto registrado");
+  /* ── Update status ── */
+  async function setStatus(id, st) {
+    await supabase.from("products").update({ status: st }).eq("id", id);
+    await supabase.from("product_history").insert({ product_id: id, action: "Estado: " + STATUS[st].label, by_email: session.email });
+    await fetchProducts();
+    setSelected(null);
+    toast("Estado actualizado");
   }
 
-  function doTransfer() {
+  /* ── Transfer ── */
+  async function doTransfer() {
     if (!xferEmail.trim()) return toast("Ingresa el correo del nuevo propietario","err");
-    if (xferEmail.toLowerCase()===session.email.toLowerCase()) return toast("No puedes transferirte a ti mismo","err");
-    setProducts(p=>p.map(x=>{
-      if (x.id!==selected.id) return x;
-      const keptFiles  = x.files.filter(f=>!xferDocs[f.id]);
-      const xferFiles  = x.files.filter(f=>!!xferDocs[f.id]);
-      return { ...x, ownerEmail:xferEmail, files:keptFiles, history:[...x.history,
-        {action:`Transferido a ${xferEmail}${xferFiles.length?` (+${xferFiles.length} doc${xferFiles.length>1?"s":""})`:""} `,date:today(),by:session.email}
-      ]};
-    }));
+    if (xferEmail.toLowerCase() === session.email.toLowerCase()) return toast("No puedes transferirte a ti mismo","err");
+    setActionLoading(true);
+    const selProduct = products.find(p => p.id === selected.id);
+
+    // Transfer selected files to new owner (update product_files records)
+    const transferredFiles = (selProduct.product_files || []).filter(f => xferDocs[f.id]);
+
+    await supabase.from("products").update({ owner_email: xferEmail }).eq("id", selected.id);
+    const label = `Transferido a ${xferEmail}${transferredFiles.length ? ` (+${transferredFiles.length} doc(s))` : ""}`;
+    await supabase.from("product_history").insert({ product_id: selected.id, action: label, by_email: session.email });
+
+    // Remove non-transferred files from the product
+    const removedFiles = (selProduct.product_files || []).filter(f => !xferDocs[f.id]);
+    if (removedFiles.length > 0) {
+      await supabase.from("product_files").delete().in("id", removedFiles.map(f => f.id));
+    }
+
+    await fetchProducts();
     setShowXfer(false); setXferEmail(""); setXferDocs({}); setSelected(null);
-    toast("🔄 Propiedad transferida correctamente");
+    toast("🔄 Propiedad transferida");
+    setActionLoading(false);
   }
 
-  /* file upload */
-  function handleFileUpload(e, productId) {
-    const fs = Array.from(e.target.files||[]);
-    if (!fs.length) return;
-    const newFiles = fs.map(f=>({
-      id: uid(),
-      name: f.name,
-      size: f.size>1048576 ? (f.size/1048576).toFixed(1)+" MB" : Math.round(f.size/1024)+" KB",
-      type: f.type.startsWith("image/")?"img":"pdf",
-    }));
-    setProducts(p=>p.map(x=>x.id===productId?{ ...x, files:[...x.files,...newFiles] }:x));
-    //const updated = products.find(x=>x.id===productId);
-    if (selected && selected.id===productId) setSelected(s=>({ ...s, files:[...(s.files||[]),...newFiles] }));
-    toast(`📎 ${newFiles.length} archivo(s) adjuntado(s)`);
-    e.target.value="";
+  /* ── File upload ── */
+  async function handleFileUpload(e, productId) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    for (const file of files) {
+      const path = `${session.id}/${productId}/${Date.now()}_${file.name}`;
+      const { error: upErr } = await supabase.storage.from("product-files").upload(path, file);
+      if (!upErr) {
+        await supabase.from("product_files").insert({
+          product_id: productId,
+          name: file.name,
+          size: file.size > 1048576 ? (file.size/1048576).toFixed(1)+" MB" : Math.round(file.size/1024)+" KB",
+          file_type: file.type.startsWith("image/") ? "img" : "pdf",
+          storage_path: path,
+        });
+      }
+    }
+    await fetchProducts();
+    toast(`📎 ${files.length} archivo(s) adjuntado(s)`);
+    e.target.value = "";
   }
 
-  function removeFile(productId, fileId) {
-    setProducts(p=>p.map(x=>x.id===productId?{ ...x, files:x.files.filter(f=>f.id!==fileId) }:x));
-    if (selected && selected.id===productId) setSelected(s=>({ ...s, files:s.files.filter(f=>f.id!==fileId) }));
+  /* ── Remove file ── */
+  async function removeFile(productId, fileId, storagePath) {
+    await supabase.storage.from("product-files").remove([storagePath]);
+    await supabase.from("product_files").delete().eq("id", fileId);
+    await fetchProducts();
     toast("Archivo eliminado");
   }
 
-  function doVerify() {
+  /* ── Verify serial ── */
+  async function doVerify() {
     if (!verifySerial.trim()) return;
-    const m = products.find(p=>p.serial.toLowerCase().includes(verifySerial.toLowerCase()));
-    setVerifyResult(m||"none");
+    const { data } = await supabase.from("products").select("*, product_history(*)").ilike("serial", `%${verifySerial}%`).single();
+    setVerifyResult(data || "none");
   }
 
-  const C = { bg:"#f8fafc", card:"#fff", border:"#e5e7eb", text:"#111", muted:"#6b7280" };
+  /* ── Sign out ── */
+  async function doSignOut() {
+    await supabase.auth.signOut();
+    setSession(null);
+    setProducts([]);
+  }
 
-  /* sync selected with products */
-  const selProduct = selected ? products.find(p=>p.id===selected.id)||null : null;
+  if (loading) return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"system-ui,sans-serif" }}>
+      <Spinner />
+    </div>
+  );
+
+  if (!session) return <AuthScreen onLogin={setSession} />;
+
+  const userName = session.user_metadata?.name || session.email;
+  const filtered = products.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.serial.toLowerCase().includes(search.toLowerCase())
+  );
+  const selProduct = selected ? products.find(p => p.id === selected.id) || null : null;
 
   return (
-    <div style={{ fontFamily:"system-ui,sans-serif", background:C.bg, minHeight:"100vh", color:C.text }}>
+    <div style={{ fontFamily:"system-ui,sans-serif", background:"#f8fafc", minHeight:"100vh", color:"#111" }}>
 
       {notif && (
         <div style={{ position:"fixed", top:16, left:"50%", transform:"translateX(-50%)", background:notif.type==="err"?"#b91c1c":"#16a34a", color:"#fff", padding:"10px 20px", borderRadius:10, fontWeight:600, zIndex:300, fontSize:14, boxShadow:"0 4px 20px #0003", whiteSpace:"nowrap" }}>
@@ -332,23 +408,22 @@ export default function App() {
         </div>
       )}
 
-      {/* header */}
-      <div style={{ background:"#fff", borderBottom:"1px solid "+C.border, padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+      {/* Header */}
+      <div style={{ background:"#fff", borderBottom:"1px solid #e5e7eb", padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <span style={{ fontSize:22 }}>🏷️</span>
           <span style={{ fontWeight:800, fontSize:20, color:"#6366f1" }}>OwnerTag</span>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <span style={{ fontSize:13, color:C.muted, display:"none" }}>{session.name}</span>
           <div style={{ width:34, height:34, borderRadius:"50%", background:"#6366f1", color:"#fff", fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>
-            {session.name[0].toUpperCase()}
+            {userName[0].toUpperCase()}
           </div>
-          <button onClick={()=>setSession(null)} style={{ background:"#fee2e2", border:"none", color:"#b91c1c", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>Salir</button>
+          <button onClick={doSignOut} style={{ background:"#fee2e2", border:"none", color:"#b91c1c", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>Salir</button>
         </div>
       </div>
 
-      {/* tabs */}
-      <div style={{ background:"#fff", borderBottom:"1px solid "+C.border, display:"flex" }}>
+      {/* Tabs */}
+      <div style={{ background:"#fff", borderBottom:"1px solid #e5e7eb", display:"flex" }}>
         {[["productos","📦 Mis Productos"],["verificar","🔎 Verificar"]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{ flex:1, padding:"12px 0", background:"none", border:"none", color:tab===k?"#6366f1":"#9ca3af", fontWeight:tab===k?700:400, fontSize:14, borderBottom:tab===k?"2px solid #6366f1":"2px solid transparent", cursor:"pointer" }}>{l}</button>
         ))}
@@ -360,31 +435,34 @@ export default function App() {
         {tab==="productos" && (<>
           <div style={{ display:"flex", gap:10, marginBottom:20 }}>
             <input placeholder="Buscar producto o número de serie…" value={search} onChange={e=>setSearch(e.target.value)}
-              style={{ flex:1, background:"#fff", border:"1px solid "+C.border, borderRadius:10, padding:"10px 14px", fontSize:14, outline:"none", color:C.text }} />
+              style={{ flex:1, background:"#fff", border:"1px solid #e5e7eb", borderRadius:10, padding:"10px 14px", fontSize:14, outline:"none", color:"#111" }} />
             <button onClick={()=>setShowReg(true)} style={{ background:"#6366f1", color:"#fff", border:"none", borderRadius:10, padding:"10px 16px", fontWeight:700, fontSize:14, cursor:"pointer" }}>+ Registrar</button>
           </div>
 
-          {filtered.length===0 && (
-            <div style={{ textAlign:"center", color:C.muted, padding:"60px 0" }}>
+          {prodLoading && <Spinner />}
+
+          {!prodLoading && filtered.length===0 && (
+            <div style={{ textAlign:"center", color:"#6b7280", padding:"60px 0" }}>
               <div style={{ fontSize:48, marginBottom:12 }}>📭</div>
               <div style={{ fontWeight:600 }}>Sin productos registrados</div>
               <div style={{ fontSize:13, marginTop:4 }}>Toca "+ Registrar" para agregar el primero</div>
             </div>
           )}
 
-          {filtered.map(p=>{
+          {filtered.map(p => {
             const cat = CATEGORIES.find(c=>c.id===p.category);
+            const files = p.product_files || [];
             return (
-              <div key={p.id} onClick={()=>setSelected(p)} style={{ background:C.card, borderRadius:14, padding:16, marginBottom:10, cursor:"pointer", border:"1px solid "+C.border, boxShadow:"0 1px 4px #0000000a", display:"flex", alignItems:"center", gap:14 }}>
-                <div style={{ width:48, height:48, borderRadius:12, background:p.accent+"18", display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, flexShrink:0 }}>
+              <div key={p.id} onClick={()=>setSelected(p)} style={{ background:"#fff", borderRadius:14, padding:16, marginBottom:10, cursor:"pointer", border:"1px solid #e5e7eb", boxShadow:"0 1px 4px #0000000a", display:"flex", alignItems:"center", gap:14 }}>
+                <div style={{ width:48, height:48, borderRadius:12, background:(p.accent||"#6366f1")+"18", display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, flexShrink:0 }}>
                   {cat?.icon||"📦"}
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontWeight:700, fontSize:15, marginBottom:2 }}>{p.name}</div>
-                  <div style={{ color:C.muted, fontSize:12, marginBottom:5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.serial}</div>
+                  <div style={{ color:"#6b7280", fontSize:12, marginBottom:5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.serial}</div>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <Badge status={p.status} />
-                    {p.files && p.files.length>0 && <span style={{ fontSize:11, color:"#9ca3af" }}>📎 {p.files.length} archivo{p.files.length>1?"s":""}</span>}
+                    {files.length>0 && <span style={{ fontSize:11, color:"#9ca3af" }}>📎 {files.length} archivo{files.length>1?"s":""}</span>}
                   </div>
                 </div>
                 <span style={{ color:"#d1d5db", fontSize:20 }}>›</span>
@@ -397,20 +475,20 @@ export default function App() {
         {tab==="verificar" && (
           <div>
             <div style={{ background:"#f0f0ff", border:"1px solid #c7d2fe", borderRadius:12, padding:16, marginBottom:20 }}>
-              <p style={{ margin:0, color:"#4338ca", fontSize:14 }}>🔐 Ingresa el número de serie, IMEI o folio de cualquier producto para verificar su registro y propietario actual.</p>
+              <p style={{ margin:0, color:"#4338ca", fontSize:14 }}>🔐 Ingresa el número de serie, IMEI o folio de cualquier producto para verificar su registro.</p>
             </div>
             <Inp label="Número de serie / IMEI / Folio" value={verifySerial} onChange={setVerifySerial} placeholder="Ej: 352398107612345" />
             <Btn onClick={doVerify}>Verificar propiedad</Btn>
             {verifyResult && verifyResult!=="none" && (
-              <div style={{ marginTop:20, background:C.card, borderRadius:14, padding:20, border:"1px solid #bbf7d0" }}>
+              <div style={{ marginTop:20, background:"#fff", borderRadius:14, padding:20, border:"1px solid #bbf7d0" }}>
                 <div style={{ color:"#16a34a", fontWeight:700, marginBottom:10 }}>✅ Producto registrado</div>
                 <div style={{ fontSize:16, fontWeight:700, marginBottom:2 }}>{verifyResult.name}</div>
-                <div style={{ color:C.muted, fontSize:13, marginBottom:8 }}>{verifyResult.serial}</div>
+                <div style={{ color:"#6b7280", fontSize:13, marginBottom:8 }}>{verifyResult.serial}</div>
                 <Badge status={verifyResult.status} />
                 <div style={{ marginTop:12, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                  {[["Propietario",verifyResult.ownerEmail],["Registrado",verifyResult.date],["Categoría",CATEGORIES.find(c=>c.id===verifyResult.category)?.label||"-"]].map(([k,v])=>(
+                  {[["Propietario",verifyResult.owner_email],["Categoría",CATEGORIES.find(c=>c.id===verifyResult.category)?.label||"-"]].map(([k,v])=>(
                     <div key={k} style={{ background:"#f8fafc", borderRadius:8, padding:10 }}>
-                      <div style={{ color:C.muted, fontSize:11, marginBottom:2 }}>{k}</div>
+                      <div style={{ color:"#9ca3af", fontSize:11, marginBottom:2 }}>{k}</div>
                       <div style={{ fontWeight:600, fontSize:13, wordBreak:"break-all" }}>{v}</div>
                     </div>
                   ))}
@@ -418,10 +496,10 @@ export default function App() {
               </div>
             )}
             {verifyResult==="none" && (
-              <div style={{ marginTop:20, background:C.card, borderRadius:14, padding:20, border:"1px solid "+C.border, textAlign:"center" }}>
+              <div style={{ marginTop:20, background:"#fff", borderRadius:14, padding:20, border:"1px solid #e5e7eb", textAlign:"center" }}>
                 <div style={{ fontSize:32, marginBottom:8 }}>❓</div>
                 <div style={{ fontWeight:600, marginBottom:4 }}>No encontrado</div>
-                <div style={{ color:C.muted, fontSize:13 }}>Este número no está registrado en OwnerTag.</div>
+                <div style={{ color:"#6b7280", fontSize:13 }}>Este número no está registrado en OwnerTag.</div>
               </div>
             )}
           </div>
@@ -435,16 +513,16 @@ export default function App() {
             <div style={{ fontSize:36 }}>{CATEGORIES.find(c=>c.id===selProduct.category)?.icon||"📦"}</div>
             <div>
               <Badge status={selProduct.status} />
-              <div style={{ color:"#9ca3af", fontSize:12, marginTop:4 }}>Registrado: {selProduct.date}</div>
+              <div style={{ color:"#9ca3af", fontSize:12, marginTop:4 }}>Registrado: {selProduct.created_at?.slice(0,10)}</div>
             </div>
           </div>
 
           <div style={{ background:"#f8fafc", borderRadius:10, padding:12, marginBottom:14, border:"1px solid #e5e7eb" }}>
             <div style={{ color:"#9ca3af", fontSize:11, fontWeight:600, marginBottom:2, textTransform:"uppercase" }}>Identificador</div>
-            <div style={{ fontFamily:"monospace", fontSize:13, color:"#111", wordBreak:"break-all" }}>{selProduct.serial}</div>
+            <div style={{ fontFamily:"monospace", fontSize:13, wordBreak:"break-all" }}>{selProduct.serial}</div>
           </div>
 
-          {/* FILES */}
+          {/* Files */}
           <div style={{ marginBottom:16 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
               <div style={{ color:"#9ca3af", fontSize:11, fontWeight:600, textTransform:"uppercase" }}>Archivos adjuntos</div>
@@ -453,30 +531,30 @@ export default function App() {
                 <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style={{ display:"none" }} onChange={e=>handleFileUpload(e, selProduct.id)} />
               </label>
             </div>
-            {(!selProduct.files||selProduct.files.length===0) && (
-              <div style={{ color:"#d1d5db", fontSize:13, textAlign:"center", padding:"12px 0" }}>Sin archivos adjuntos</div>
+            {(!selProduct.product_files || selProduct.product_files.length===0) && (
+              <div style={{ color:"#d1d5db", fontSize:13, textAlign:"center", padding:"10px 0" }}>Sin archivos adjuntos</div>
             )}
-            {selProduct.files && selProduct.files.map(f=>(
+            {(selProduct.product_files||[]).map(f=>(
               <div key={f.id} style={{ display:"flex", alignItems:"center", gap:10, background:"#f8fafc", borderRadius:8, padding:"8px 12px", marginBottom:6, border:"1px solid #e5e7eb" }}>
-                <span style={{ fontSize:20 }}>{fileIcon(f.type)}</span>
+                <span style={{ fontSize:20 }}>{fileIcon(f.file_type)}</span>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</div>
                   <div style={{ fontSize:11, color:"#9ca3af" }}>{f.size}</div>
                 </div>
-                <button onClick={()=>removeFile(selProduct.id, f.id)} style={{ background:"none", border:"none", color:"#f87171", cursor:"pointer", fontSize:16, padding:0 }}>🗑</button>
+                <button onClick={()=>removeFile(selProduct.id, f.id, f.storage_path)} style={{ background:"none", border:"none", color:"#f87171", cursor:"pointer", fontSize:16 }}>🗑</button>
               </div>
             ))}
           </div>
 
-          {/* HISTORY */}
+          {/* History */}
           <div style={{ marginBottom:16 }}>
             <div style={{ color:"#9ca3af", fontSize:11, fontWeight:600, marginBottom:8, textTransform:"uppercase" }}>Historial</div>
-            {selProduct.history.map((h,i)=>(
+            {(selProduct.product_history||[]).map((h,i)=>(
               <div key={i} style={{ display:"flex", gap:10, marginBottom:8 }}>
                 <div style={{ width:8, height:8, borderRadius:"50%", background:"#6366f1", marginTop:5, flexShrink:0 }} />
                 <div>
                   <div style={{ fontSize:13, color:"#374151", fontWeight:500 }}>{h.action}</div>
-                  <div style={{ fontSize:11, color:"#9ca3af" }}>{h.date}</div>
+                  <div style={{ fontSize:11, color:"#9ca3af" }}>{h.created_at?.slice(0,10)}</div>
                 </div>
               </div>
             ))}
@@ -519,44 +597,37 @@ export default function App() {
               {CATEGORIES.find(c=>c.id===regCat)?.fields.filter(f=>!["Número de serie","IMEI","Folio real"].includes(f)).map(f=>(
                 <Inp key={f} label={f} value={regForm[f]||""} onChange={v=>setRegForm(p=>({...p,[f]:v}))} placeholder={f} />
               ))}
-              <Btn onClick={doRegister} full>Registrar producto</Btn>
+              <Btn onClick={doRegister} full loading={actionLoading}>Registrar producto</Btn>
             </>
           )}
         </Modal>
       )}
 
-      {/* ── TRANSFERIR CON DOCS ── */}
+      {/* ── TRANSFERIR ── */}
       {showXfer && selProduct && (
         <Modal title="Transferir propiedad" onClose={()=>{ setShowXfer(false); setXferEmail(""); setXferDocs({}); }}>
           <div style={{ background:"#fef9c3", border:"1px solid #fcd34d", borderRadius:10, padding:12, marginBottom:16 }}>
             <div style={{ fontWeight:600, fontSize:13, color:"#92400e", marginBottom:2 }}>⚠️ Esta acción es permanente</div>
-            <div style={{ fontSize:13, color:"#92400e" }}>Transferirás <strong>{selProduct.name}</strong> a otro usuario. Quedará registrado en el historial.</div>
+            <div style={{ fontSize:13, color:"#92400e" }}>Transferirás <strong>{selProduct.name}</strong> a otro usuario.</div>
           </div>
-
           <Inp label="Correo del nuevo propietario" value={xferEmail} onChange={setXferEmail} placeholder="correo@ejemplo.com" type="email" />
-
-          {selProduct.files && selProduct.files.length>0 && (
+          {(selProduct.product_files||[]).length>0 && (
             <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:"#374151", marginBottom:8 }}>📎 ¿Deseas transferir los documentos adjuntos?</div>
-              {selProduct.files.map(f=>(
-                <label key={f.id} style={{ display:"flex", alignItems:"center", gap:10, background: xferDocs[f.id]?"#f0f0ff":"#f8fafc", border:"1px solid "+(xferDocs[f.id]?"#c7d2fe":"#e5e7eb"), borderRadius:8, padding:"10px 12px", marginBottom:6, cursor:"pointer" }}>
-                  <input type="checkbox" checked={!!xferDocs[f.id]} onChange={e=>setXferDocs(d=>({...d,[f.id]:e.target.checked}))}
-                    style={{ width:16, height:16, accentColor:"#6366f1", cursor:"pointer", flexShrink:0 }} />
-                  <span style={{ fontSize:18 }}>{fileIcon(f.type)}</span>
+              <div style={{ fontSize:13, fontWeight:600, color:"#374151", marginBottom:8 }}>📎 ¿Transferir documentos adjuntos?</div>
+              {(selProduct.product_files||[]).map(f=>(
+                <label key={f.id} style={{ display:"flex", alignItems:"center", gap:10, background:xferDocs[f.id]?"#f0f0ff":"#f8fafc", border:"1px solid "+(xferDocs[f.id]?"#c7d2fe":"#e5e7eb"), borderRadius:8, padding:"10px 12px", marginBottom:6, cursor:"pointer" }}>
+                  <input type="checkbox" checked={!!xferDocs[f.id]} onChange={e=>setXferDocs(d=>({...d,[f.id]:e.target.checked}))} style={{ width:16, height:16, accentColor:"#6366f1", cursor:"pointer" }} />
+                  <span style={{ fontSize:18 }}>{fileIcon(f.file_type)}</span>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</div>
                     <div style={{ fontSize:11, color:"#9ca3af" }}>{f.size}</div>
                   </div>
                 </label>
               ))}
-              <div style={{ fontSize:12, color:"#9ca3af", marginTop:6 }}>
-                {Object.values(xferDocs).filter(Boolean).length} de {selProduct.files.length} documento(s) seleccionado(s) para transferir
-              </div>
             </div>
           )}
-
           <div style={{ display:"flex", gap:10 }}>
-            <Btn onClick={doTransfer} full>Confirmar transferencia</Btn>
+            <Btn onClick={doTransfer} loading={actionLoading}>Confirmar transferencia</Btn>
             <Btn onClick={()=>{ setShowXfer(false); setXferEmail(""); setXferDocs({}); }} variant="ghost">Cancelar</Btn>
           </div>
         </Modal>
