@@ -21,7 +21,7 @@ const STATUS = {
   dado_de_baja: { label:"Dado de baja", bg:"#f3f4f6", color:"#6b7280", dot:"#9ca3af" },
 };
 
-const ACCENTS   = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#ec4899","#8b5cf6"];
+const ACCENTS    = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#ec4899","#8b5cf6"];
 const randAccent = () => ACCENTS[Math.floor(Math.random() * ACCENTS.length)];
 const fileIcon   = (t) => t === "img" ? "🖼️" : "📄";
 
@@ -34,10 +34,9 @@ function daysUntil(dateStr) {
 function warrantyBadge(dateStr) {
   const days = daysUntil(dateStr);
   if (days === null) return null;
-  if (days < 0)  return { label:"Garantía vencida",    bg:"#fee2e2", color:"#b91c1c" };
-  if (days <= 5)  return { label:`Vence en ${days}d`,   bg:"#fee2e2", color:"#b91c1c" };
-  if (days <= 15) return { label:`Vence en ${days}d`,   bg:"#fef9c3", color:"#b45309" };
-  if (days <= 30) return { label:`Vence en ${days}d`,   bg:"#fef9c3", color:"#b45309" };
+  if (days < 0)   return { label:"Garantía vencida",   bg:"#fee2e2", color:"#b91c1c" };
+  if (days <= 5)  return { label:`Vence en ${days}d`,  bg:"#fee2e2", color:"#b91c1c" };
+  if (days <= 30) return { label:`Vence en ${days}d`,  bg:"#fef9c3", color:"#b45309" };
   return { label:`Garantía: ${dateStr}`, bg:"#dcfce7", color:"#16a34a" };
 }
 
@@ -255,6 +254,7 @@ export default function App() {
   const [regSerial, setRegSerial]     = useState("");
   const [regWarranty, setRegWarranty] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [previewFile, setPreviewFile] = useState(null);
 
   const toast = (msg, type="ok") => {
     setNotif({ msg, type });
@@ -283,42 +283,23 @@ export default function App() {
     setNotifications(data || []);
   }, []);
 
-  // Check warranty expirations and create notifications
   const checkWarranties = useCallback(async (user, prods) => {
     if (!user || !prods) return;
     for (const p of prods) {
       if (!p.warranty_date) continue;
       const days = daysUntil(p.warranty_date);
-      const thresholds = [30, 15, 5];
-      for (const t of thresholds) {
+      for (const t of [30, 15, 5]) {
         if (days === t) {
-          // Check if notification already exists for this product+threshold
-          const { data: existing } = await supabase
-            .from("notifications")
-            .select("id")
-            .eq("product_id", p.id)
-            .eq("type", "warranty")
-            .ilike("message", `%${t} días%`);
-          if (!existing || existing.length === 0) {
-            await supabase.from("notifications").insert({
-              user_id: user.id,
-              type: "warranty",
-              title: "⏰ Garantía próxima a vencer",
-              message: `La garantía de "${p.name}" vence en ${t} días (${p.warranty_date}).`,
-              product_id: p.id,
-            });
+          const { data: ex } = await supabase.from("notifications").select("id").eq("product_id",p.id).eq("type","warranty").ilike("message",`%${t} días%`);
+          if (!ex || ex.length===0) {
+            await supabase.from("notifications").insert({ user_id:user.id, type:"warranty", title:"⏰ Garantía próxima a vencer", message:`La garantía de "${p.name}" vence en ${t} días (${p.warranty_date}).`, product_id:p.id });
           }
         }
       }
       if (days === 0) {
-        const { data: existing } = await supabase.from("notifications").select("id").eq("product_id", p.id).eq("type","warranty").ilike("message","%vence hoy%");
-        if (!existing || existing.length===0) {
-          await supabase.from("notifications").insert({
-            user_id: user.id, type:"warranty",
-            title:"🚨 Garantía vence hoy",
-            message:`La garantía de "${p.name}" vence hoy (${p.warranty_date}).`,
-            product_id: p.id,
-          });
+        const { data: ex } = await supabase.from("notifications").select("id").eq("product_id",p.id).eq("type","warranty").ilike("message","%vence hoy%");
+        if (!ex || ex.length===0) {
+          await supabase.from("notifications").insert({ user_id:user.id, type:"warranty", title:"🚨 Garantía vence hoy", message:`La garantía de "${p.name}" vence hoy (${p.warranty_date}).`, product_id:p.id });
         }
       }
     }
@@ -329,10 +310,7 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => {
       const user = data.session?.user || null;
       setSession(user);
-      if (user) {
-        fetchProducts(user).then(()=>{});
-        fetchNotifications(user);
-      }
+      if (user) { fetchProducts(user); fetchNotifications(user); }
       setLoading(false);
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_e, sess) => {
@@ -347,6 +325,20 @@ export default function App() {
     if (products.length > 0 && session) checkWarranties(session, products);
   }, [products]);
 
+  /* ── File URL ── */
+  async function getFileUrl(storagePath) {
+    const { data } = await supabase.storage.from("product-files").createSignedUrl(storagePath, 3600);
+    return data?.signedUrl || null;
+  }
+
+  async function openPreview(f) {
+    const url = await getFileUrl(f.storage_path);
+    if (!url) return toast("No se pudo obtener el archivo","err");
+    const ext = f.name.split(".").pop().toLowerCase();
+    setPreviewFile({ name:f.name, url, type:f.file_type, ext });
+  }
+
+  /* ── CRUD ── */
   async function doRegister() {
     if (!regCat || !regName.trim() || !regSerial.trim()) return toast("Completa nombre y número de serie","err");
     setActionLoading(true);
@@ -355,15 +347,10 @@ export default function App() {
     const { data: prod, error } = await supabase.from("products").insert({
       user_id: session.id,
       owner_email: session.email,
-      public_owner_id: 'OT-' + session.id.substring(0,8).toUpperCase(),
-      name: regName,
-      category: regCat,
-      serial: regSerial,
-      brand: regForm["Marca"] || "",
-      model: regForm["Modelo"] || "",
-      accent: randAccent(),
-      status: "activo",
-      extra_fields: regForm,
+      public_owner_id: "OT-"+session.id.substring(0,8).toUpperCase(),
+      name: regName, category: regCat, serial: regSerial,
+      brand: regForm["Marca"]||"", model: regForm["Modelo"]||"",
+      accent: randAccent(), status: "activo", extra_fields: regForm,
       warranty_date: regWarranty || null,
     }).select().single();
     if (!error && prod) {
@@ -380,17 +367,9 @@ export default function App() {
   async function setStatus(id, st) {
     await supabase.from("products").update({ status:st }).eq("id",id);
     await supabase.from("product_history").insert({ product_id:id, action:"Estado: "+STATUS[st].label, by_email:session.email });
-
-    // If marked as lost, create notification for owner
-    if (st === "perdido") {
+    if (st==="perdido") {
       const prod = products.find(p=>p.id===id);
-      await supabase.from("notifications").insert({
-        user_id: session.id,
-        type: "found",
-        title: "📍 Producto marcado como perdido",
-        message: `Has marcado "${prod?.name}" como perdido. Si alguien lo encuentra podrá contactarte.`,
-        product_id: id,
-      });
+      await supabase.from("notifications").insert({ user_id:session.id, type:"found", title:"📍 Producto marcado como perdido", message:`Has marcado "${prod?.name}" como perdido. Si alguien lo encuentra podrá contactarte.`, product_id:id });
       await fetchNotifications(session);
     }
     await fetchProducts(session);
@@ -403,11 +382,10 @@ export default function App() {
     if (xferEmail.toLowerCase()===session.email.toLowerCase()) return toast("No puedes transferirte a ti mismo","err");
     setActionLoading(true);
     const selProduct = products.find(p=>p.id===selected.id);
-    const transferredFiles = (selProduct.product_files||[]).filter(f=>xferDocs[f.id]);
     const removedFiles = (selProduct.product_files||[]).filter(f=>!xferDocs[f.id]);
+    const transferredFiles = (selProduct.product_files||[]).filter(f=>xferDocs[f.id]);
     await supabase.from("products").update({ owner_email:xferEmail }).eq("id",selected.id);
-    const label = `Transferido a ${xferEmail}${transferredFiles.length?` (+${transferredFiles.length} doc(s))`:""}`;
-    await supabase.from("product_history").insert({ product_id:selected.id, action:label, by_email:session.email });
+    await supabase.from("product_history").insert({ product_id:selected.id, action:`Transferido a ${xferEmail}${transferredFiles.length?` (+${transferredFiles.length} doc(s))`:""}`, by_email:session.email });
     if (removedFiles.length>0) await supabase.from("product_files").delete().in("id",removedFiles.map(f=>f.id));
     await fetchProducts(session);
     setShowXfer(false); setXferEmail(""); setXferDocs({}); setSelected(null);
@@ -423,11 +401,10 @@ export default function App() {
       const { error:upErr } = await supabase.storage.from("product-files").upload(path, file);
       if (!upErr) {
         await supabase.from("product_files").insert({
-          product_id: productId,
-          name: file.name,
-          size: file.size>1048576?(file.size/1048576).toFixed(1)+" MB":Math.round(file.size/1024)+" KB",
-          file_type: file.type.startsWith("image/")?"img":"pdf",
-          storage_path: path,
+          product_id:productId, name:file.name,
+          size:file.size>1048576?(file.size/1048576).toFixed(1)+" MB":Math.round(file.size/1024)+" KB",
+          file_type:file.type.startsWith("image/")?"img":"pdf",
+          storage_path:path,
         });
       }
     }
@@ -477,12 +454,38 @@ export default function App() {
 
   if (!session) return <AuthScreen onLogin={(user)=>{ setSession(user); fetchProducts(user); fetchNotifications(user); }} />;
 
-  const userName    = session.user_metadata?.name || session.email;
-  const unread      = notifications.filter(n=>!n.read).length;
-  const filtered    = products.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())||p.serial.toLowerCase().includes(search.toLowerCase()));
-  const selProduct  = selected ? products.find(p=>p.id===selected.id)||null : null;
+  const userName   = session.user_metadata?.name || session.email;
+  const unread     = notifications.filter(n=>!n.read).length;
+  const filtered   = products.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())||p.serial.toLowerCase().includes(search.toLowerCase()));
+  const selProduct = selected ? products.find(p=>p.id===selected.id)||null : null;
 
-  const notifIcon = (type) => type==="warranty"?"🛡️":"📍";
+  /* ── FILE CARD ── */
+  function FileCard({ f, showCheck }) {
+    const ext = f.name.split(".").pop().toLowerCase();
+    const icon = ["jpg","jpeg","png","gif","webp"].includes(ext) ? "🖼️" : ["xls","xlsx"].includes(ext) ? "📊" : ["doc","docx"].includes(ext) ? "📝" : "📄";
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:10, background: showCheck && xferDocs[f.id]?"#f0f0ff":"#f8fafc", border:"1px solid "+(showCheck && xferDocs[f.id]?"#c7d2fe":"#e5e7eb"), borderRadius:8, padding:"8px 12px", marginBottom:6 }}>
+        {showCheck && (
+          <input type="checkbox" checked={!!xferDocs[f.id]} onChange={e=>setXferDocs(d=>({...d,[f.id]:e.target.checked}))} style={{ width:16, height:16, accentColor:"#6366f1", cursor:"pointer", flexShrink:0 }} />
+        )}
+        <span style={{ fontSize:20 }}>{icon}</span>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</div>
+          <div style={{ fontSize:11, color:"#9ca3af" }}>{f.size}</div>
+        </div>
+        {!showCheck && (<>
+          <button onClick={()=>openPreview(f)}
+            style={{ background:"#f0f0ff", border:"none", color:"#6366f1", cursor:"pointer", fontSize:12, fontWeight:600, borderRadius:6, padding:"4px 10px", flexShrink:0 }}>
+            👁 Ver
+          </button>
+          <button onClick={()=>removeFile(f.id,f.storage_path)}
+            style={{ background:"none", border:"none", color:"#f87171", cursor:"pointer", fontSize:16, flexShrink:0 }}>
+            🗑
+          </button>
+        </>)}
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily:"system-ui,sans-serif", background:"#f8fafc", minHeight:"100vh", color:"#111" }}>
@@ -528,7 +531,6 @@ export default function App() {
               style={{ flex:1, background:"#fff", border:"1px solid #e5e7eb", borderRadius:10, padding:"10px 14px", fontSize:14, outline:"none", color:"#111" }} />
             <button onClick={()=>setShowReg(true)} style={{ background:"#6366f1", color:"#fff", border:"none", borderRadius:10, padding:"10px 16px", fontWeight:700, fontSize:14, cursor:"pointer" }}>+ Registrar</button>
           </div>
-
           {prodLoading && <Spinner />}
           {!prodLoading && filtered.length===0 && (
             <div style={{ textAlign:"center", color:"#6b7280", padding:"60px 0" }}>
@@ -577,7 +579,7 @@ export default function App() {
                 <div style={{ color:"#6b7280", fontSize:13, marginBottom:8 }}>{verifyResult.serial}</div>
                 <Badge status={verifyResult.status} />
                 <div style={{ marginTop:12, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                  {[["Propietario ID", verifyResult.public_owner_id||"N/A"],["Categoría",CATEGORIES.find(c=>c.id===verifyResult.category)?.label||"-"]].map(([k,v])=>(
+                  {[["Propietario ID",verifyResult.public_owner_id||"N/A"],["Categoría",CATEGORIES.find(c=>c.id===verifyResult.category)?.label||"-"]].map(([k,v])=>(
                     <div key={k} style={{ background:"#f8fafc", borderRadius:8, padding:10 }}>
                       <div style={{ color:"#9ca3af", fontSize:11, marginBottom:2 }}>{k}</div>
                       <div style={{ fontWeight:600, fontSize:13, wordBreak:"break-all" }}>{v}</div>
@@ -603,7 +605,6 @@ export default function App() {
               <div style={{ fontWeight:700, fontSize:16 }}>🔔 Notificaciones</div>
               {unread>0 && <Btn onClick={markAllRead} variant="ghost" small>Marcar todas como leídas</Btn>}
             </div>
-
             {notifications.length===0 && (
               <div style={{ textAlign:"center", color:"#6b7280", padding:"60px 0" }}>
                 <div style={{ fontSize:48, marginBottom:12 }}>🔕</div>
@@ -611,13 +612,12 @@ export default function App() {
                 <div style={{ fontSize:13, marginTop:4 }}>Aquí aparecerán alertas de garantía y objetos encontrados</div>
               </div>
             )}
-
             {notifications.map(n=>(
-              <div key={n.id} onClick={()=>markRead(n.id)} style={{ background: n.read?"#fff":"#f0f0ff", borderRadius:14, padding:16, marginBottom:10, border:"1px solid "+(n.read?"#e5e7eb":"#c7d2fe"), cursor:"pointer" }}>
+              <div key={n.id} onClick={()=>markRead(n.id)} style={{ background:n.read?"#fff":"#f0f0ff", borderRadius:14, padding:16, marginBottom:10, border:"1px solid "+(n.read?"#e5e7eb":"#c7d2fe"), cursor:"pointer" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
                   <div style={{ flex:1 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                      <span style={{ fontSize:18 }}>{notifIcon(n.type)}</span>
+                      <span style={{ fontSize:18 }}>{n.type==="warranty"?"🛡️":"📍"}</span>
                       <span style={{ fontWeight:700, fontSize:14 }}>{n.title}</span>
                       {!n.read && <span style={{ background:"#6366f1", color:"#fff", borderRadius:20, padding:"1px 8px", fontSize:11, fontWeight:600 }}>Nueva</span>}
                     </div>
@@ -655,11 +655,9 @@ export default function App() {
             <div style={{ background:"#f8fafc", borderRadius:10, padding:12, marginBottom:14, border:"1px solid #e5e7eb" }}>
               <div style={{ color:"#9ca3af", fontSize:11, fontWeight:600, marginBottom:2, textTransform:"uppercase" }}>Garantía</div>
               <div style={{ fontSize:14, fontWeight:600 }}>Vence: {selProduct.warranty_date}</div>
-              {daysUntil(selProduct.warranty_date) !== null && (
-                <div style={{ color: daysUntil(selProduct.warranty_date) <= 30 ? "#b45309" : "#16a34a", fontSize:13, marginTop:2 }}>
-                  {daysUntil(selProduct.warranty_date) < 0 ? "Garantía vencida" : `Quedan ${daysUntil(selProduct.warranty_date)} días`}
-                </div>
-              )}
+              <div style={{ color:daysUntil(selProduct.warranty_date)<=30?"#b45309":"#16a34a", fontSize:13, marginTop:2 }}>
+                {daysUntil(selProduct.warranty_date)<0?"Garantía vencida":`Quedan ${daysUntil(selProduct.warranty_date)} días`}
+              </div>
             </div>
           )}
 
@@ -669,22 +667,13 @@ export default function App() {
               <div style={{ color:"#9ca3af", fontSize:11, fontWeight:600, textTransform:"uppercase" }}>Archivos adjuntos</div>
               <label style={{ background:"#f0f0ff", color:"#6366f1", border:"1px solid #c7d2fe", borderRadius:8, padding:"4px 10px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
                 📎 Adjuntar
-                <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style={{ display:"none" }} onChange={e=>handleFileUpload(e,selProduct.id)} />
+                <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" style={{ display:"none" }} onChange={e=>handleFileUpload(e,selProduct.id)} />
               </label>
             </div>
             {(!selProduct.product_files||selProduct.product_files.length===0) && (
               <div style={{ color:"#d1d5db", fontSize:13, textAlign:"center", padding:"10px 0" }}>Sin archivos adjuntos</div>
             )}
-            {(selProduct.product_files||[]).map(f=>(
-              <div key={f.id} style={{ display:"flex", alignItems:"center", gap:10, background:"#f8fafc", borderRadius:8, padding:"8px 12px", marginBottom:6, border:"1px solid #e5e7eb" }}>
-                <span style={{ fontSize:20 }}>{fileIcon(f.file_type)}</span>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</div>
-                  <div style={{ fontSize:11, color:"#9ca3af" }}>{f.size}</div>
-                </div>
-                <button onClick={()=>removeFile(f.id,f.storage_path)} style={{ background:"none", border:"none", color:"#f87171", cursor:"pointer", fontSize:16 }}>🗑</button>
-              </div>
-            ))}
+            {(selProduct.product_files||[]).map(f=><FileCard key={f.id} f={f} showCheck={false} />)}
           </div>
 
           {/* History */}
@@ -756,16 +745,7 @@ export default function App() {
           {(selProduct.product_files||[]).length>0 && (
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:13, fontWeight:600, color:"#374151", marginBottom:8 }}>📎 ¿Transferir documentos adjuntos?</div>
-              {(selProduct.product_files||[]).map(f=>(
-                <label key={f.id} style={{ display:"flex", alignItems:"center", gap:10, background:xferDocs[f.id]?"#f0f0ff":"#f8fafc", border:"1px solid "+(xferDocs[f.id]?"#c7d2fe":"#e5e7eb"), borderRadius:8, padding:"10px 12px", marginBottom:6, cursor:"pointer" }}>
-                  <input type="checkbox" checked={!!xferDocs[f.id]} onChange={e=>setXferDocs(d=>({...d,[f.id]:e.target.checked}))} style={{ width:16, height:16, accentColor:"#6366f1", cursor:"pointer" }} />
-                  <span style={{ fontSize:18 }}>{fileIcon(f.file_type)}</span>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</div>
-                    <div style={{ fontSize:11, color:"#9ca3af" }}>{f.size}</div>
-                  </div>
-                </label>
-              ))}
+              {(selProduct.product_files||[]).map(f=><FileCard key={f.id} f={f} showCheck={true} />)}
             </div>
           )}
           <div style={{ display:"flex", gap:10 }}>
@@ -774,6 +754,53 @@ export default function App() {
           </div>
         </Modal>
       )}
+
+      {/* ── VISOR DE ARCHIVOS ── */}
+      {previewFile && (
+        <div style={{ position:"fixed", inset:0, background:"#000d", display:"flex", flexDirection:"column", zIndex:200 }}>
+          <div style={{ background:"#1e1e2e", padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+            <div style={{ color:"#fff", fontWeight:600, fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:"60%" }}>
+              {previewFile.name}
+            </div>
+            <div style={{ display:"flex", gap:10, flexShrink:0 }}>
+              <a href={previewFile.url} target="_blank" rel="noreferrer"
+                style={{ background:"#6366f1", color:"#fff", borderRadius:8, padding:"6px 14px", fontSize:12, fontWeight:600, textDecoration:"none" }}>
+                ⬇️ Descargar
+              </a>
+              <button onClick={()=>setPreviewFile(null)}
+                style={{ background:"#ffffff22", border:"none", color:"#fff", borderRadius:8, padding:"6px 14px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+                ✕ Cerrar
+              </button>
+            </div>
+          </div>
+          <div style={{ flex:1, overflow:"auto", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+            {["jpg","jpeg","png","gif","webp"].includes(previewFile.ext) && (
+              <img src={previewFile.url} alt={previewFile.name}
+                style={{ maxWidth:"100%", maxHeight:"100%", borderRadius:8, boxShadow:"0 8px 40px #0008" }} />
+            )}
+            {previewFile.ext==="pdf" && (
+              <iframe src={previewFile.url} title={previewFile.name}
+                style={{ width:"100%", height:"100%", minHeight:"70vh", border:"none", borderRadius:8 }} />
+            )}
+            {["doc","docx","xls","xlsx"].includes(previewFile.ext) && (
+              <div style={{ background:"#fff", borderRadius:16, padding:40, textAlign:"center", maxWidth:400 }}>
+                <div style={{ fontSize:64, marginBottom:16 }}>
+                  {["xls","xlsx"].includes(previewFile.ext)?"📊":"📝"}
+                </div>
+                <div style={{ fontWeight:700, fontSize:18, marginBottom:8 }}>{previewFile.name}</div>
+                <div style={{ color:"#6b7280", fontSize:14, marginBottom:24 }}>
+                  Los archivos Word y Excel no se pueden previsualizar en el navegador. Descárgalo para abrirlo.
+                </div>
+                <a href={previewFile.url} target="_blank" rel="noreferrer"
+                  style={{ background:"#6366f1", color:"#fff", borderRadius:8, padding:"10px 24px", fontSize:14, fontWeight:600, textDecoration:"none" }}>
+                  ⬇️ Descargar para abrir
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
